@@ -1,0 +1,4 @@
+interface:
+  display_name: "文件依赖关系图"
+  short_description: "生成可视化文件依赖关系图，并辅助分析模块耦合与架构边界"
+  default_prompt: "Use $dependency-graph to generate a file dependency graph for the selected module and explain the architecture implications."

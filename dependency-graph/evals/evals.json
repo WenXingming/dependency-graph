@@ -1,0 +1,56 @@
+{
+  "skill_name": "dependency-graph",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我画一下当前项目 src/dedup 目录里的文件依赖关系图，输出一个可以打开查看的 SVG，并解释 FileInfo.h 在这个图里扮演什么角色。",
+      "expected_output": "生成 SVG 和 JSON 依赖图；默认使用自上而下布局；C/C++ 同名 .h/.cpp 同时存在时只展示 .h；说明依赖边方向；指出 FileInfo.h 被多个文件依赖，更像模块级共享值对象或接口，而不是 FileWalker 的私有细节。",
+      "files": [],
+      "assertions": [
+        "输出中包含一个可视化图文件路径，优先是 .svg。",
+        "输出中包含一个 JSON 边数据文件路径。",
+        "默认图中不单独展示与同名头文件同时存在的 .cpp 节点。",
+        "默认图使用自上而下布局，或明确说明使用了 --direction TB。",
+        "解释至少两条真实依赖边，例如 FileWalker.h -> FileInfo.h 或 Hasher.h -> FileInfo.h。",
+        "根据 fan-in 或多处依赖关系判断 FileInfo.h 应保持独立。"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "我想看这个仓库的文件级 include/import graph。请生成有向图，并告诉我 fan-in 最高的文件、fan-out 最高的文件，以及有没有循环依赖。",
+      "expected_output": "生成文件级有向依赖图；默认使用 headers 视图和 TB 布局；报告 fan-in、fan-out 和循环依赖情况；说明该图只能反映静态 include/import 关系。",
+      "files": [],
+      "assertions": [
+        "输出中说明边方向是 使用者文件 -> 被依赖文件。",
+        "输出中说明 C/C++ 默认 headers 视图，或生成结果体现同名 .cpp 被隐藏。",
+        "输出中说明默认布局是 TB 自上而下，或生成文件中体现 rankdir=TB。",
+        "输出中报告 fan-in 最高或较高的文件。",
+        "输出中报告 fan-out 最高或较高的文件。",
+        "输出中明确说明是否发现循环依赖。"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "从依赖关系角度看，某个数据结构应该留在独立头文件里，还是放进产生它的 Walker 类头文件里？请先画出相关文件之间的依赖图再判断。",
+      "expected_output": "先生成或引用依赖图，再从依赖方向解释类型归属；如果多个平级模块依赖该类型，建议保持独立；如果移动会让无关模块依赖 Walker，则指出这是不必要耦合。",
+      "files": [],
+      "assertions": [
+        "回答先基于图或边数据，而不是直接凭直觉给结论。",
+        "解释移动类型后可能造成的 include 方向变化。",
+        "区分共享模型/接口与某个类的私有实现细节。",
+        "给出明确的保留独立或合并建议。"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "请用 dependency-graph 分析一个小型 Python 或 JS/TS 模块的 import 依赖，输出 HTML 或 Mermaid 图，同时说明哪些节点像基础工具，哪些节点像流程协调者。",
+      "expected_output": "对 Python 或 JS/TS import 生成可视化图；说明基础工具通常 fan-in 较高，流程协调者通常 fan-out 较高；如果解析不到动态 import，要说明限制。",
+      "files": [],
+      "assertions": [
+        "输出中包含 .html、.mmd、.svg 或 .json 之一的图产物路径。",
+        "根据 fan-in/fan-out 区分基础工具和协调者。",
+        "说明动态 import 或非静态依赖可能无法完全解析。"
+      ]
+    }
+  ]
+}
