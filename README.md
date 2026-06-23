@@ -49,4 +49,4 @@ python scripts/generate_dependency_graph.py \
 
 ## 详细文档
 
-更详细的说明和高级用法见 [SKILL.md](SKILL.md)。
+更详细的说明和高级用法见 [SKILL.md](skills/dependency-graph/SKILL.md)。
