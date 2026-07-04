@@ -110,12 +110,6 @@ def collect_files(args: argparse.Namespace) -> list[Path]:
             continue
         if matches_any(relative, excludes):
             continue
-        if (
-            args.cpp_view == "headers"
-            and path.suffix in CPP_IMPLEMENTATION_EXTENSIONS
-            and has_matching_header(path, candidates)
-        ):
-            continue
         files.append(path)
     return files
 
@@ -205,10 +199,23 @@ def extract_edges(
     external: bool,
     file_set: set[str],
     by_basename: dict[str, list[str]],
+    cpp_view: str,
 ) -> set[tuple[str, str]]:
     edges: set[tuple[str, str]] = set()
+    
+    def map_node(node: str) -> str:
+        if cpp_view == "headers" and not node.startswith("external:"):
+            p = Path(node)
+            if p.suffix in CPP_IMPLEMENTATION_EXTENSIONS:
+                for ext in CPP_HEADER_EXTENSIONS:
+                    candidate = str(p.with_suffix(ext))
+                    if candidate in file_set:
+                        return candidate
+        return node
+
     for path in files:
-        source = rel(path, root)
+        raw_source = rel(path, root)
+        source = map_node(raw_source)
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
@@ -216,22 +223,31 @@ def extract_edges(
 
         if path.suffix in CPP_EXTENSIONS:
             for delimiter, include in CPP_INCLUDE_RE.findall(text):
-                target = resolve_cpp_include(include, path, root, file_set, by_basename)
-                if target or delimiter == '"' or external:
-                    add_edge(edges, source, target, external and delimiter == "<", include)
+                raw_target = resolve_cpp_include(include, path, root, file_set, by_basename)
+                if raw_target or delimiter == '"' or external:
+                    target = map_node(raw_target) if raw_target else None
+                    if target != source:  # filter self-loops
+                        add_edge(edges, source, target, external and delimiter == "<", include)
 
         if path.suffix == ".py":
             for module in PY_IMPORT_RE.findall(text):
-                add_edge(edges, source, resolve_python_module(module, root, file_set), external, module)
+                raw_target = resolve_python_module(module, root, file_set)
+                target = map_node(raw_target) if raw_target else None
+                if target != source:
+                    add_edge(edges, source, target, external, module)
             for module, imported in PY_FROM_RE.findall(text):
-                target = resolve_python_module(module, root, file_set)
-                add_edge(edges, source, target, external and not module.startswith("."), module or imported)
+                raw_target = resolve_python_module(module, root, file_set)
+                target = map_node(raw_target) if raw_target else None
+                if target != source:
+                    add_edge(edges, source, target, external and not module.startswith("."), module or imported)
 
         if path.suffix in {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}:
             for groups in JS_IMPORT_RE.findall(text):
                 specifier = next((item for item in groups if item), "")
-                target = resolve_js_module(specifier, path, root, file_set)
-                add_edge(edges, source, target, external and not specifier.startswith("."), specifier)
+                raw_target = resolve_js_module(specifier, path, root, file_set)
+                target = map_node(raw_target) if raw_target else None
+                if target != source:
+                    add_edge(edges, source, target, external and not specifier.startswith("."), specifier)
 
     return edges
 
@@ -283,7 +299,16 @@ def find_cycles(nodes: set[str], edges: set[tuple[str, str]]) -> list[list[str]]
 
 
 def build_graph_data(root: Path, files: list[Path], edges: set[tuple[str, str]], args: argparse.Namespace) -> dict:
-    nodes = {rel(path, root) for path in files}
+    nodes = set()
+    for path in files:
+        node = rel(path, root)
+        if args.cpp_view == "headers":
+            if path.suffix in CPP_IMPLEMENTATION_EXTENSIONS:
+                has_header = any(path.with_suffix(ext).is_file() for ext in CPP_HEADER_EXTENSIONS)
+                if has_header:
+                    continue
+        nodes.add(node)
+        
     for source, target in edges:
         nodes.add(source)
         nodes.add(target)
@@ -425,7 +450,7 @@ def main(argv: list[str]) -> int:
     root = args.root.resolve()
     files = collect_files(args)
     file_set, by_basename = build_indexes(files, root)
-    edges = extract_edges(files, root, args.external, file_set, by_basename)
+    edges = extract_edges(files, root, args.external, file_set, by_basename, args.cpp_view)
     data = build_graph_data(root, files, edges, args)
 
     if args.output:
