@@ -44,6 +44,7 @@ Hasher.h -> FileInfo.h
 4. 回答用户的设计问题。
    - 说明生成了哪些图文件。
    - 摘出最关键的边、fan-in/fan-out、循环情况。
+   - 如果通过代码分析，你发现某些依赖仅仅是用于**依赖注入（DI）装配**或者是**纯粹的前置声明**，并非发生实际的方法调用，请在调用生成脚本时自动附加 `--weak-edge "A->B"` 参数，使图表能准确反映架构语义。
    - 把结论落到用户关心的重构、拆分、合并、移动或命名问题上。
    - 说明限制：脚本主要做静态文本级解析，动态 import、宏生成 include、构建系统 include path 可能无法完全还原。
 
@@ -65,6 +66,7 @@ python3 .agents/skills/dependency-graph/scripts/generate_dependency_graph.py \
 - `--scope PATH`：指定扫描目录或文件，可重复传入。
 - `--include GLOB`：额外指定文件 glob，例如 `src/**/*.h`。
 - `--exclude GLOB`：排除路径，例如 `build/**`、`third_party/**`。
+- `--weak-edge EDGE`：指定弱依赖边（如 `src/main.cpp->src/ObjectService.h`），图中会渲染为虚线。
 - `--output PATH`：按扩展名输出 `.svg`、`.html`、`.dot`、`.mmd` 或 `.json`。
 - `--json PATH`：额外输出原始图数据。
 - `--external`：把未解析到本项目文件的外部依赖也画成灰色节点。

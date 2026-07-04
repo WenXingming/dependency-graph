@@ -315,12 +315,14 @@ def build_graph_data(root: Path, files: list[Path], edges: set[tuple[str, str]],
 
     fan_in = Counter(target for _, target in edges)
     fan_out = Counter(source for source, _ in edges)
+    weak_edges = args.weak_edge or []
     return {
         "root": root.as_posix(),
         "cpp_view": args.cpp_view,
         "direction": args.direction,
         "nodes": sorted(nodes),
         "edges": [{"source": source, "target": target} for source, target in sorted(edges)],
+        "weak_edges": list(set(weak_edges)),
         "fan_in": dict(sorted(fan_in.items())),
         "fan_out": dict(sorted(fan_out.items())),
         "cycles": find_cycles(nodes, edges),
@@ -343,8 +345,12 @@ def render_dot(data: dict) -> str:
         color = "#94a3b8" if node.startswith("external:") else "#64748b"
         label = node.removeprefix("external:")
         lines.append(f"  {dot_id(node)} [label={dot_id(label)}, fillcolor={dot_id(fill)}, color={dot_id(color)}];")
+    
+    weak_set = set(data.get("weak_edges", []))
     for edge in data["edges"]:
-        style = " [style=dashed, color=\"#94a3b8\"]" if edge["target"].startswith("external:") else ""
+        edge_str = f"{edge['source']}->{edge['target']}"
+        is_weak = edge_str in weak_set
+        style = " [style=dashed, color=\"#94a3b8\"]" if edge["target"].startswith("external:") or is_weak else ""
         lines.append(f"  {dot_id(edge['source'])} -> {dot_id(edge['target'])}{style};")
     lines.append("}")
     return "\n".join(lines) + "\n"
@@ -356,8 +362,12 @@ def render_mermaid(data: dict) -> str:
     for node, node_id in node_ids.items():
         label = node.removeprefix("external:").replace('"', "'")
         lines.append(f'  {node_id}["{label}"]')
+        
+    weak_set = set(data.get("weak_edges", []))
     for edge in data["edges"]:
-        lines.append(f"  {node_ids[edge['source']]} --> {node_ids[edge['target']]}")
+        edge_str = f"{edge['source']}->{edge['target']}"
+        arrow = "-.->" if edge_str in weak_set else "-->"
+        lines.append(f"  {node_ids[edge['source']]} {arrow} {node_ids[edge['target']]}")
     return "\n".join(lines) + "\n"
 
 
@@ -426,6 +436,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--scope", action="append", help="要扫描的目录或文件，可重复传入。")
     parser.add_argument("--include", action="append", help="相对 root 的包含 glob，可重复传入。")
     parser.add_argument("--exclude", action="append", help="相对 root 的排除 glob，可重复传入。")
+    parser.add_argument("--weak-edge", action="append", help="指定弱依赖边（格式：source->target），在图中将被绘制为虚线。可重复传入。")
     parser.add_argument("--output", type=Path, help="输出文件：.svg、.dot、.mmd、.html 或 .json。")
     parser.add_argument("--json", type=Path, help="额外输出原始图数据 JSON。")
     parser.add_argument("--external", action="store_true", help="包含未解析到项目内文件的外部/系统依赖。")
