@@ -61,8 +61,14 @@ TEST_EXCLUDES = (
 )
 
 CPP_INCLUDE_RE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]', re.MULTILINE)
-PY_IMPORT_RE = re.compile(r"^\s*import\s+([A-Za-z_][\w.]*)(?:\s+as\s+\w+)?", re.MULTILINE)
-PY_FROM_RE = re.compile(r"^\s*from\s+([.\w]+)\s+import\s+([\w*,\s]+)", re.MULTILINE)
+PY_IMPORT_RE = re.compile(
+    r"^[ \t]*import[ \t]+([A-Za-z_][\w.]*)(?:[ \t]+as[ \t]+\w+)?", re.MULTILINE
+)
+# Keep the imported-name group on one line: a greedy \s here would swallow the
+# "from" keyword of the following line and silently skip consecutive imports.
+PY_FROM_RE = re.compile(
+    r"^[ \t]*from[ \t]+([.\w]+)[ \t]+import[ \t]+(\([^)]*\)|[^\n#]+)", re.MULTILINE
+)
 JS_IMPORT_RE = re.compile(
     r"""(?:from\s*['"]([^'"]+)['"]|require\(\s*['"]([^'"]+)['"]\s*\)|import\(\s*['"]([^'"]+)['"]\s*\))"""
 )
@@ -154,9 +160,33 @@ def resolve_cpp_include(
     return None
 
 
-def resolve_python_module(module: str, root: Path, file_set: set[str]) -> str | None:
-    if not module or module.startswith("."):
+def resolve_python_module(
+    module: str, root: Path, file_set: set[str], source: Path | None = None
+) -> str | None:
+    if not module:
         return None
+
+    # Relative imports: "from .geometry_risk import X" / "from ..pkg.mod import Y".
+    if module.startswith("."):
+        if source is None or not source.is_file():
+            return None
+        level = len(module) - len(module.lstrip("."))
+        remainder = module[level:]
+        base = source.parent
+        for _ in range(level - 1):
+            base = base.parent
+        parts = remainder.split(".") if remainder else []
+        target_base = base.joinpath(*parts)
+        candidates = [
+            target_base.with_suffix(".py"),
+            target_base / "__init__.py",
+        ]
+        for candidate in candidates:
+            resolved = resolve_existing(candidate.resolve(), root, file_set)
+            if resolved:
+                return resolved
+        return None
+
     module_path = Path(*module.split("."))
     candidates = [
         root / module_path.with_suffix(".py"),
@@ -166,6 +196,17 @@ def resolve_python_module(module: str, root: Path, file_set: set[str]) -> str | 
         resolved = resolve_existing(candidate.resolve(), root, file_set)
         if resolved:
             return resolved
+
+    # Absolute import of a module whose file lives outside --root scanning scope
+    # but is inside the project: fall back to the longest matching suffix.
+    dotted = module.replace(".", "/")
+    matches = [
+        node
+        for node in file_set
+        if node.endswith(f"/{dotted}.py") or node == f"{dotted}.py"
+    ]
+    if len(matches) == 1:
+        return matches[0]
     return None
 
 
@@ -231,12 +272,12 @@ def extract_edges(
 
         if path.suffix == ".py":
             for module in PY_IMPORT_RE.findall(text):
-                raw_target = resolve_python_module(module, root, file_set)
+                raw_target = resolve_python_module(module, root, file_set, path)
                 target = map_node(raw_target) if raw_target else None
                 if target != source:
                     add_edge(edges, source, target, external, module)
             for module, imported in PY_FROM_RE.findall(text):
-                raw_target = resolve_python_module(module, root, file_set)
+                raw_target = resolve_python_module(module, root, file_set, path)
                 target = map_node(raw_target) if raw_target else None
                 if target != source:
                     add_edge(edges, source, target, external and not module.startswith("."), module or imported)
